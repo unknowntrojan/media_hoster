@@ -1,0 +1,51 @@
+version: "3.9"
+
+networks:
+  main:
+    name: main
+    external: false
+
+services:
+  media_hoster:
+    build: ./
+
+    environment:
+      - MODE=NVIDIA
+      - DOMAIN=chloride.cc
+      - RUST_LOG=media_hoster
+
+    networks:
+      - main
+
+    expose:
+      - 80
+
+    volumes:
+      - ./db.sqlite:/app/db.sqlite
+
+    privileged: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+
+    environment:
+      - TUNNEL_TOKEN=TOKEN
+      - TUNNEL_TRANSPORT_PROTOCOL=quic
+      - TUNNEL_LOGLEVEL=trace
+
+    networks:
+      - main
+
+    command: tunnel run
+
+    volumes:
+      - /opt/appdata/cloudflared/data:/home/nonroot/.cloudflared/

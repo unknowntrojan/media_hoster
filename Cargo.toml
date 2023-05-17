@@ -1,0 +1,29 @@
+[package]
+name = "media_hoster"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.17"
+env_logger = "0.10.0"
+futures-util = { version = "0.3.26", default-features = false, features = ["std"] }
+actix-web = { version = "4.3.1", default-features = false, features = ["cookies", "macros"] }
+actix-multipart = { version = "0.6.0" }
+sqlx = { version = "0.6.2", default-features = false, features = ["macros", "migrate", "time", "sqlite", "runtime-tokio-rustls"] }
+time = { version = "0.3.20", features = ["formatting", "serde", "parsing", "serde-well-known"] }
+serde = { version = "1.0.152", features = ["derive"] }
+argon2 = "0.4.1"
+random-string = "1.0.0"
+meowhash = "0.3.0"
+radix_fmt = "1.0.0"
+mime = "0.3.16"
+bytesize = "1.2.0"
+url-escape = "0.1.1"
+maud = "0.24.0"
+base_custom = "0.2.0"
+regex = "1.7.1"
+async-process = "1.6.0"
+tokio = { version = "1.26.0", features = ["full"] }
+num = "0.4.0"
+scopeguard = "1.1.0"
+dotenv = "0.15.0"

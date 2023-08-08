@@ -61,8 +61,6 @@ impl FromRequest for Session {
 
             let token = token.value();
 
-            // debug!("token: {}", token);
-
             // 7 days in seconds
             const EXPIRY: u32 = 60 * 60 * 24 * 7;
 

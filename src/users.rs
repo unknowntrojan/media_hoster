@@ -83,6 +83,53 @@ async fn login(
 	}
 }
 
+#[post("/invite")]
+async fn generate_invite(sql: web::Data<Pool<Sqlite>>, session: Session) -> impl Responder {
+    if session.user.id != 1 {
+        return HttpResponse::Found()
+            .append_header((http::header::LOCATION, "/"))
+            .cookie(
+                Cookie::build("msg", "you are not allowed to create an invite")
+                    .path("/")
+                    .secure(true)
+                    .http_only(true)
+                    .same_site(SameSite::Strict)
+                    .finish(),
+            )
+            .finish();
+    }
+
+    let invite = crate::util::generate_invite();
+
+    match sqlx::query!("INSERT INTO invites (token) VALUES(?)", invite)
+        .execute(&**sql)
+        .await
+    {
+        Ok(_) => HttpResponse::Found()
+            .append_header((http::header::LOCATION, "/"))
+            .cookie(
+                Cookie::build("msg", invite)
+                    .path("/")
+                    .secure(true)
+                    .same_site(SameSite::Strict)
+                    .http_only(true)
+                    .finish(),
+            )
+            .finish(),
+        Err(_) => HttpResponse::Found()
+            .append_header((http::header::LOCATION, "/"))
+            .cookie(
+                Cookie::build("msg", "failed to create invite")
+                    .path("/")
+                    .secure(true)
+                    .http_only(true)
+                    .same_site(SameSite::Strict)
+                    .finish(),
+            )
+            .finish(),
+    }
+}
+
 #[derive(Deserialize)]
 struct RegistrationForm {
     username: String,
@@ -257,12 +304,12 @@ async fn invalidate_apikey(session: Session, sql: web::Data<Pool<Sqlite>>) -> im
         .finish()
 }
 
-#[get("/sxcu")]
-async fn sharex(domain: web::Data<String>, session: Session) -> impl Responder {
+#[get("/uploader")]
+async fn sharex_uploader(domain: web::Data<String>, session: Session) -> impl Responder {
     // generate a SXCU file.
 
     #[derive(Serialize)]
-    struct Sxcu {
+    struct UploaderSxcu {
         #[serde(rename = "Version")]
         version: String,
         #[serde(rename = "Name")]
@@ -283,9 +330,9 @@ async fn sharex(domain: web::Data<String>, session: Session) -> impl Responder {
         error_msg: String,
     }
 
-    let sxcu = Sxcu {
-        version: "14.0.0".into(),
-        name: "u.w".into(),
+    let sxcu = UploaderSxcu {
+        version: "15.0.0".into(),
+        name: "Chloride Uploader".into(),
         file_form_name: "unknown".into(),
         destination_type: "ImageUploader, FileUploader".into(),
         request_method: "POST".into(),
@@ -296,17 +343,73 @@ async fn sharex(domain: web::Data<String>, session: Session) -> impl Responder {
     };
 
     HttpResponse::Ok()
-        .append_header(("Content-Disposition", "attachment; filename=uw.sxcu"))
+        .append_header((
+            "Content-Disposition",
+            "attachment; filename=chloride_uploader.sxcu",
+        ))
+        .json(sxcu)
+}
+
+#[get("/shortener")]
+async fn sharex_shortener(domain: web::Data<String>, session: Session) -> impl Responder {
+    // generate a SXCU file.
+
+    #[derive(Serialize)]
+    struct Parameters {
+        url: String,
+        text: String,
+        key: String,
+    }
+
+    #[derive(Serialize)]
+    struct ShortenerSxcu {
+        #[serde(rename = "Version")]
+        version: String,
+        #[serde(rename = "Name")]
+        name: String,
+        #[serde(rename = "DestinationType")]
+        destination_type: String,
+        #[serde(rename = "RequestMethod")]
+        request_method: String,
+        #[serde(rename = "RequestURL")]
+        request_url: String,
+        #[serde(rename = "URL")]
+        url: String,
+        #[serde(rename = "Parameters")]
+        parameters: Parameters,
+    }
+
+    let sxcu = ShortenerSxcu {
+        version: "15.0.0".into(),
+        name: "Chloride Shortener".into(),
+        destination_type: "URLShortener".into(),
+        request_method: "POST".into(),
+        request_url: format!("{}/shorten", domain.as_str()),
+        parameters: Parameters {
+            url: "{input}".into(),
+            text: "i am a furry".into(),
+            key: session.user.apikey,
+        },
+        url: "{response}".into(),
+    };
+
+    HttpResponse::Ok()
+        .append_header((
+            "Content-Disposition",
+            "attachment; filename=chloride_shortener.sxcu",
+        ))
         .json(sxcu)
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     let scope = web::scope("/users")
         // .service(list)
-        .service(sharex)
+        .service(sharex_uploader)
+        .service(sharex_shortener)
         .service(login)
         .service(register)
-        .service(invalidate_apikey);
+        .service(invalidate_apikey)
+        .service(generate_invite);
 
     cfg.service(scope);
 }

@@ -4,7 +4,7 @@ WORKDIR /app
 COPY . .
 
 RUN apk add --no-cache libc-dev musl-dev openssl-dev git sqlite-dev
-RUN cargo install sqlx-cli
+RUN cargo install sqlx-cli --no-default-features --features rustls,sqlite
 RUN sqlx migrate run
 
 FROM docker.io/rustlang/rust:nightly-alpine as build
@@ -18,6 +18,7 @@ RUN apk add --no-cache libc-dev musl-dev openssl-dev sqlite-dev
 RUN cargo build --release
 
 FROM docker.io/fedora
+WORKDIR /app
 
 RUN dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
 RUN dnf install -y https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm

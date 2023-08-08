@@ -11,7 +11,7 @@ fn header() -> Markup {
         (DOCTYPE)
         meta charset="utf-8";
         meta name="viewport" content="width=device-width, initial-scale=1.0";
-        title { "u.w" }
+        title { "chloride.cc" }
         script src="https://cdn.tailwindcss.com" {}
         script src="https://unpkg.com/feather-icons" {}
         script {
@@ -73,11 +73,11 @@ async fn index(
 	fn link_from_hashstr(string: &str) -> String {
 		format!(
 			"/{}",
-			util::to_invisible(u128::from_str_radix(string, 36).unwrap_or(0))
+			string
 		)
 	}
 
-	let user_usage = if let Ok(user_usage) = sqlx::query!("SELECT SUM(LENGTH(file)) + SUM(LENGTH(embeddable_file)) AS len FROM media WHERE owner = ?", session.user.id).fetch_one(&**sql).await {
+	let user_usage = if let Ok(user_usage) = sqlx::query!("SELECT COALESCE(SUM(LENGTH(file)), SUM(LENGTH(embeddable_file))) AS len FROM media WHERE owner = ?", session.user.id).fetch_one(&**sql).await {
 		if let Some(len) = user_usage.len {
 			len
 		} else {
@@ -87,9 +87,13 @@ async fn index(
 		0i64
 	};
 
+	let user_usage = (user_usage as f64) / 1024f64 / 1024f64;
+
+	let user_usage = format!("{user_usage:.2}MB");
+
     let media: Markup = match sqlx::query_as!(
         Query,
-        "SELECT hash, mime, owner, filename, LENGTH(file) AS \"size!: i32\", LENGTH(embeddable_file) AS \"embed_size!: i32\", added AS \"added: OffsetDateTime\" FROM media WHERE owner = ?",
+        "SELECT hash, mime, owner, filename, LENGTH(file) AS \"size!: i32\", LENGTH(embeddable_file) AS \"embed_size!: i32\", added AS \"added: OffsetDateTime\" FROM media WHERE owner = ? ORDER BY added DESC",
 		session.user.id
     ).fetch_all(&**sql)
     .await
@@ -118,7 +122,7 @@ async fn index(
 							td class="whitespace-nowrap px-4" { (entry.added.format(&format).unwrap()) }
 							td class="whitespace-nowrap px-4" {
 								div class="flex flex-row" {
-									button type="button" onclick=(format!("navigator.clipboard.writeText(window.location.hostname + '{}')", link_from_hashstr(&entry.hash))) class="mx-1 rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
+									button type="button" onclick=(format!("navigator.clipboard.writeText(window.location + '{}')", link_from_hashstr(&entry.hash))) class="mx-1 rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
 										i class="m-auto" data-feather="link" {}
 									}
 									form action=({ format!("/remove/{}", &entry.hash) }) method="post" class="m-auto" {
@@ -141,25 +145,43 @@ async fn index(
     let body = html! {
         (header())
         body class="select-none bg-zinc-800 text-[#f2f7f2]" {
-            div class="flex flex-col w-screen h-screen" {
-                div class="m-auto text-center" {
-					(flash)
+			div class="flex flex-row w-full" {
+				// navbar
+				div class="p-4" {
                     "Hi, " (session.user.username) "!"
 					br;
-					"You are using " (user_usage) " bytes of space."
+					"You are using " (user_usage) " of space."
+					br;
+				}
+
+				div class="flex flex-row justify-center w-1/3 mr-auto my-auto" {
+					form action="/users/invite" method="post" class="m-auto" {
+						button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-2 display:inline justify:center" {
+							"Generate Invite"
+						}
+					}
+					form action="/users/uploader" method="get" class="m-auto" {
+						button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-2 display:inline justify:center" {
+							"ShareX Uploader"
+						}
+					}
+					form action="/users/shortener" method="get" class="m-auto" {
+						button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-2 display:inline justify:center" {
+							"ShareX Shortener"
+						}
+					}
+					form action="/users/invalidate_apikey" method="post" class="m-auto" {
+						button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-2 display:inline justify:center" {
+							"Invalidate API key"
+						}
+					}
+				}
+				
+			}
+            div class="flex flex-col w-full h-full" {
+                div class="m-auto text-center" {
+					(flash)
                     br;
-                    br;
-                    form action="/users/sxcu" method="get" class="m-auto" {
-                        button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
-                            "Download ShareX config"
-                        }
-                    }
-                    br;
-                    form action="/users/invalidate_apikey" method="post" class="m-auto" {
-                        button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
-                            "Invalidate API key"
-                        }
-                    }
                     (media)
                 }
             }

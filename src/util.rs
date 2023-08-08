@@ -105,6 +105,7 @@ pub enum MediaType {
     Video,
 }
 
+#[derive(Debug)]
 struct MediaInfo {
     fps: f64,
     len: Duration,
@@ -124,6 +125,8 @@ impl MediaInfo {
         };
 
         let ffprobe = ffprobe.as_str();
+
+        // debug!("{ffprobe}");
 
         // fix the fps regex to support flat numbers
         let bit_regex = Regex::new("bit_rate=(\\d*)")?;
@@ -149,6 +152,8 @@ impl MediaInfo {
 
             let out = String::from_utf8_lossy(&out.stdout).into_owned();
 
+            // debug!("{out}");
+
             if let Some(x) = bit_regex.captures(out.as_str()) {
                 x[1].parse()?
             } else {
@@ -172,6 +177,8 @@ impl MediaInfo {
                 .await?;
 
             let out = String::from_utf8_lossy(&out.stdout).into_owned();
+
+            // debug!("{out}");
 
             if let Some(x) = bit_regex.captures(out.as_str()) {
                 x[1].parse()?
@@ -234,7 +241,7 @@ pub async fn encode_media(
                 let _ = std::fs::remove_dir_all(&hash);
             }
 
-            let bytesize = format!("{}", ByteSize::mib(7).as_u64());
+            let bytesize = format!("{}", ByteSize::mib(18).as_u64());
 
             let args = [
                 file_path.as_str(),
@@ -252,7 +259,7 @@ pub async fn encode_media(
             // read file out
             let file_blob = tokio::fs::read(out_path).await?;
 
-            assert!(file_blob.len() < ByteSize::mib(8).as_u64() as usize);
+            assert!(file_blob.len() < ByteSize::mib(20).as_u64() as usize);
 
             debug!(
                 "Result: {} bytes -> {} bytes ({:.3}%)",
@@ -289,11 +296,13 @@ pub async fn encode_media(
             // get media information
             let media_info = { MediaInfo::new(file_path.as_str()).await? };
 
+            // debug!("{media_info:?}");
+
             // set a ratio of 80% video, 20% audio (prioritise video if audio max bitrate is reached)
             // cap resolution at 1080p
             // cap at 30fps
 
-            let target_size = ByteSize::mib(7).as_u64() + ByteSize::kib(400).as_u64();
+            let target_size = ByteSize::mib(16).as_u64();
 
             // framerate shicanery (cap out at 30fps, try to get half the original framerate to allow us to just copy every 2nd frame)
             let target_fps = {
@@ -390,7 +399,7 @@ pub async fn encode_media(
                 if mode == "CPU" {
                     target_bitrates.0 / 1000
                 } else {
-                    ((target_bitrates.0 / 1000) as f64 * 0.8f64) as u64
+                    ((target_bitrates.0 / 1000) as f64 * 0.6f64) as u64
                 }
             );
             let audio_bitrate_string = format!("{}K", target_bitrates.1 / 1000);
@@ -446,7 +455,7 @@ pub async fn encode_media(
                 "-maxrate",                    // CBR max rate
                 video_bitrate_string.as_str(), // = our calculated optimal bitrate
                 "-bufsize",                    // CBR buffer size
-                "100K",                        // = 100k
+                "1M",                          // = 100k
                 "-filter:v",                   // the video framerate
                 fps_string.as_str(),           // = our potentially reduced framerate
                 "-s",                          // the video frame size
@@ -476,7 +485,7 @@ pub async fn encode_media(
             // read file out
             let file_blob = tokio::fs::read(out_path).await?;
 
-            assert!(file_blob.len() < ByteSize::mib(8).as_u64() as usize);
+            assert!(file_blob.len() < ByteSize::mib(20).as_u64() as usize);
 
             debug!(
                 "Result: {} bytes -> {} bytes ({:.3}%)",

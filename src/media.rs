@@ -3,15 +3,18 @@ use std::error::Error;
 use actix_multipart::Multipart;
 use actix_web::{
     cookie::{Cookie, SameSite},
-    get, guard, http, post,
+    get, guard,
+    http::{self, header::ContentType},
+    post,
     rt::spawn,
     web::{self},
     HttpRequest, HttpResponse, Responder,
 };
 use bytesize::ByteSize;
 use futures_util::TryStreamExt as _;
-use log::{debug, error};
+use log::{debug, error, info};
 use mime::Mime;
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Sqlite};
 
@@ -23,14 +26,16 @@ async fn get(
     sql: web::Data<Pool<Sqlite>>,
     hash: web::Path<String>,
 ) -> impl Responder {
-    let hash = util::from_invisible(hash.to_string());
-    let hash = if let Ok(x) = hash {
-        x
-    } else {
-        return HttpResponse::BadRequest().finish();
-    };
+    let hash = hash.to_string();
 
-    let hash = radix_fmt::radix_36(hash).to_string();
+    //util::from_invisible(hash.to_string());
+    // let hash = if let Ok(x) = hash {
+    //     x
+    // } else {
+    //     return HttpResponse::BadRequest().finish();
+    // };
+
+    // let hash = radix_fmt::radix_36(hash).to_string();
 
     let useragent = req.headers().get("User-Agent");
 
@@ -57,6 +62,7 @@ async fn get(
             .await {
 				x
 			} else {
+				debug!("cant find {hash} in db");
 				return HttpResponse::NotFound().finish();
 			}
         }
@@ -175,12 +181,12 @@ async fn upload(
         });
     };
 
-    let (hash_raw, hash) = util::data_hash(&filedata.data);
-    let link_hash = util::to_invisible(hash_raw);
+    let (_, hash) = util::data_hash(&filedata.data);
+    let link_hash = hash.clone(); // util::to_invisible(hash_raw);
 
     debug!(
         "Upload requested: Hash {}, MIME: {}, FileName: {}",
-        hash, filedata.filetype, filedata.filename
+        &hash, filedata.filetype, filedata.filename
     );
 
     let filetype = filedata.filetype.to_string();
@@ -211,7 +217,7 @@ async fn upload(
         }
     };
 
-    if filedata.data.len() > ByteSize::mib(8).as_u64() as usize
+    if filedata.data.len() > ByteSize::mib(20).as_u64() as usize
         && filedata.data.len() < ByteSize::gib(1).as_u64() as usize
     {
         // DO NOT AWAIT THIS, ITS SUPPOSED TO RUN AS A BACKGROUND TASK WHILE WE
@@ -299,6 +305,47 @@ async fn remove_media(
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Query {
+    url: String,
+    text: Option<String>,
+    key: String,
+}
+
+#[post("/shorten")]
+async fn shorten(sql: web::Data<Pool<Sqlite>>, query: web::Query<Query>) -> impl Responder {
+    let apikey = query.key.clone();
+
+    let _ = if let Ok(x) = sqlx::query_as!(User, "SELECT * FROM users WHERE apikey = ?", apikey)
+        .fetch_one(&**sql)
+        .await
+    {
+        x
+    } else {
+        return HttpResponse::Forbidden().finish();
+    };
+
+    static XD: OnceCell<String> = OnceCell::new();
+
+    HttpResponse::Ok()
+        .content_type(ContentType::octet_stream())
+        .body(
+            format!(
+                "{}{}{}",
+                query.text.clone().unwrap_or_default(),
+                XD.get_or_init(|| {
+                    let mut string = String::new();
+                    for _ in 0..250 {
+                        string.push_str("||​||");
+                    }
+                    string
+                }),
+                query.url
+            )
+            .into_bytes(),
+        )
+}
+
 // #[get("/list")]
 // async fn list(sql: web::Data<Pool<Sqlite>>, session: Session) -> impl Responder {
 //     #[derive(Debug, Serialize)]
@@ -331,15 +378,18 @@ async fn remove_media(
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     let scope = web::scope("")
-        .guard(guard::fn_guard(|ctx| {
-            ctx.head()
-                .uri
-                .path()
-                .split('/')
-                .last()
-                .is_some_and(|x| x.len() == 576)
-        }))
+        // .guard(guard::fn_guard(|ctx| {
+        //     ctx.head()
+        //         .uri
+        //         .path()
+        //         .split('/')
+        //         .last()
+        //         .is_some_and(|x| x.len() == 576)
+        // }))
         .service(get);
 
-    cfg.service(upload).service(remove_media).service(scope);
+    cfg.service(upload)
+        .service(remove_media)
+        .service(shorten)
+        .service(scope);
 }

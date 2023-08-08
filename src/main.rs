@@ -4,6 +4,7 @@
 #![feature(async_closure)]
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
+use log::debug;
 use sqlx::sqlite::SqlitePoolOptions;
 
 mod auth;
@@ -25,8 +26,11 @@ async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
 
-    let domain = std::env::var("DOMAIN").unwrap_or("localhost:80".into());
-    let domain = format!("http://{domain}");
+    let domain = if let Ok(domain) = std::env::var("DOMAIN") {
+        format!("https://{domain}")
+    } else {
+        format!("http://localhost:80")
+    };
 
     let pool_options = SqlitePoolOptions::new();
 

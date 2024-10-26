@@ -7,19 +7,19 @@ use time::{format_description, OffsetDateTime};
 use crate::{auth::Session, util};
 
 fn header() -> Markup {
-    html! {
-        (DOCTYPE)
-        meta charset="utf-8";
-        meta name="viewport" content="width=device-width, initial-scale=1.0";
-        title { "chloride.cc" }
-        script src="https://cdn.tailwindcss.com" {}
-        script src="https://unpkg.com/feather-icons" {}
-        script {
-            (PreEscaped("window.onload = (event) => {
+	html! {
+		(DOCTYPE)
+		meta charset="utf-8";
+		meta name="viewport" content="width=device-width, initial-scale=1.0";
+		title { "chloride.cc" }
+		script src="https://cdn.tailwindcss.com" {}
+		script src="https://unpkg.com/feather-icons" {}
+		script {
+			(PreEscaped("window.onload = (event) => {
 				feather.replace();
 			};"))
-        }
-    }
+		}
+	}
 }
 
 fn messagebox(msg: &str) -> Markup {
@@ -34,20 +34,20 @@ fn messagebox(msg: &str) -> Markup {
 
 #[get("/")]
 async fn index(
-    req: HttpRequest,
-    session: Option<Session>,
-    sql: web::Data<Pool<Sqlite>>,
+	req: HttpRequest,
+	session: Option<Session>,
+	sql: web::Data<Pool<Sqlite>>,
 ) -> impl Responder {
-    let session = match session {
-        Some(x) => x,
-        None => {
-            return HttpResponse::TemporaryRedirect()
-                .append_header((http::header::LOCATION, "/login"))
-                .finish();
-        }
-    };
+	let session = match session {
+		Some(x) => x,
+		None => {
+			return HttpResponse::TemporaryRedirect()
+				.append_header((http::header::LOCATION, "/login"))
+				.finish();
+		}
+	};
 
-    let flash = match req.cookie("msg") {
+	let flash = match req.cookie("msg") {
 		Some(x) => {
 			messagebox(x.value())
 		}, None => {
@@ -55,20 +55,20 @@ async fn index(
 		}
 	};
 
-    #[derive(Debug, Serialize)]
-    struct Query {
-        pub hash: String,
-        pub mime: String,
-        pub owner: i64,
-        pub filename: String,
-        pub size: i32,
-        pub embed_size: i32,
-        #[serde(with = "time::serde::iso8601")]
-        pub added: OffsetDateTime,
-    }
+	#[derive(Debug, Serialize)]
+	struct Query {
+		pub hash: String,
+		pub mime: String,
+		pub owner: i64,
+		pub filename: String,
+		pub size: i32,
+		pub embed_size: i32,
+		#[serde(with = "time::serde::iso8601")]
+		pub added: OffsetDateTime,
+	}
 
-    let format =
-        format_description::parse("[day].[month].[year] [hour]:[minute]:[second]").unwrap();
+	let format =
+		format_description::parse("[day].[month].[year] [hour]:[minute]:[second]").unwrap();
 
 	fn link_from_hashstr(string: &str) -> String {
 		format!(
@@ -91,14 +91,14 @@ async fn index(
 
 	let user_usage = format!("{user_usage:.2}MB");
 
-    let media: Markup = match sqlx::query_as!(
-        Query,
-        "SELECT hash, mime, owner, filename, LENGTH(file) AS \"size!: i32\", LENGTH(embeddable_file) AS \"embed_size!: i32\", added AS \"added: OffsetDateTime\" FROM media WHERE owner = ? ORDER BY added DESC",
+	let media: Markup = match sqlx::query_as!(
+		Query,
+		"SELECT hash, mime, owner, filename, LENGTH(file) AS \"size!: i32\", LENGTH(embeddable_file) AS \"embed_size!: i32\", added AS \"added: OffsetDateTime\" FROM media WHERE owner = ? ORDER BY added DESC",
 		session.user.id
-    ).fetch_all(&**sql)
-    .await
-    {
-        Ok(x) => { 
+	).fetch_all(&**sql)
+	.await
+	{
+		Ok(x) => { 
 			html! {				
 				br;
 				br;
@@ -138,17 +138,17 @@ async fn index(
 			}
 		},
 		Err(_) => {
-        	messagebox("error fetching media")
+			messagebox("error fetching media")
 		}
-    };
+	};
 
-    let body = html! {
-        (header())
-        body class="select-none bg-zinc-800 text-[#f2f7f2]" {
+	let body = html! {
+		(header())
+		body class="select-none bg-zinc-800 text-[#f2f7f2]" {
 			div class="flex flex-row w-full" {
 				// navbar
 				div class="p-4" {
-                    "Hi, " (session.user.username) "!"
+					"Hi, " (session.user.username) "!"
 					br;
 					"You are using " (user_usage) " of space."
 					br;
@@ -175,31 +175,36 @@ async fn index(
 							"Invalidate API key"
 						}
 					}
+					form action="/users/download_dump" method="post" class="m-auto" {
+						button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-2 display:inline justify:center" {
+							"Download dump"
+						}
+					}
 				}
-				
-			}
-            div class="flex flex-col w-full h-full" {
-                div class="m-auto text-center" {
-					(flash)
-                    br;
-                    (media)
-                }
-            }
-        }
-    };
 
-    let mut builder = HttpResponse::Ok().body(body.into_string());
+			}
+			div class="flex flex-col w-full h-full" {
+				div class="m-auto text-center" {
+					(flash)
+					br;
+					(media)
+				}
+			}
+		}
+	};
+
+	let mut builder = HttpResponse::Ok().body(body.into_string());
 	builder.add_removal_cookie(&Cookie::named("msg")).unwrap();
 	builder
 }
 
 #[get("/login")]
 async fn login(req: HttpRequest, session: Option<Session>) -> impl Responder {
-    if session.is_some() {
-        return HttpResponse::Found()
-            .append_header((http::header::LOCATION, "/"))
-            .finish();
-    }
+	if session.is_some() {
+		return HttpResponse::Found()
+			.append_header((http::header::LOCATION, "/"))
+			.finish();
+	}
 
 	let flash = match req.cookie("msg") {
 		Some(x) => {
@@ -209,44 +214,44 @@ async fn login(req: HttpRequest, session: Option<Session>) -> impl Responder {
 		}
 	};
 
-    let body = html! {
-        (header())
-        body class="select-none bg-zinc-800 text-[#f2f7f2]" {
-            div class="flex flex-col w-screen h-screen" {
-                div class="m-auto" {
+	let body = html! {
+		(header())
+		body class="select-none bg-zinc-800 text-[#f2f7f2]" {
+			div class="flex flex-col w-screen h-screen" {
+				div class="m-auto" {
 					(flash)
-                    h1 class="justify-center text-center" {
-                        "login"
-                    }
-                    form action="/users/login" method="post" class="mt-4 flex flex-col" {
-                        input type="text" name="username" placeholder="username" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
-                        input type="password" name="password" placeholder="password" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 placeholder:italic text-center caret-transparent";
-                        button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
-                            i class="m-auto" data-feather="log-in" {}
-                        }
+					h1 class="justify-center text-center" {
+						"login"
+					}
+					form action="/users/login" method="post" class="mt-4 flex flex-col" {
+						input type="text" name="username" placeholder="username" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
+						input type="password" name="password" placeholder="password" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 placeholder:italic text-center caret-transparent";
+						button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
+							i class="m-auto" data-feather="log-in" {}
+						}
 						br;
 						br;
 						a href="/register" class="justify-center text-center mt-8" {
 							"register instead"
 						}
-                    }					
-                }
-            }
-        }
-    };
+					}					
+				}
+			}
+		}
+	};
 
-    let mut builder = HttpResponse::Ok().body(body.into_string());
+	let mut builder = HttpResponse::Ok().body(body.into_string());
 	builder.add_removal_cookie(&Cookie::named("msg")).unwrap();
 	builder
 }
 
 #[get("/register")]
 async fn register(req: HttpRequest, session: Option<Session>) -> impl Responder {
-    if session.is_some() {
-        return HttpResponse::Found()
-            .append_header((http::header::LOCATION, "/"))
-            .finish();
-    }
+	if session.is_some() {
+		return HttpResponse::Found()
+			.append_header((http::header::LOCATION, "/"))
+			.finish();
+	}
 
 	let flash = match req.cookie("msg") {
 		Some(x) => {
@@ -256,33 +261,33 @@ async fn register(req: HttpRequest, session: Option<Session>) -> impl Responder 
 		}
 	};
 
-    let body = html! {
-        (header())
-        body class="select-none bg-zinc-800 text-[#f2f7f2]" {
-            div class="flex flex-col w-screen h-screen" {
-                div class="m-auto" {
+	let body = html! {
+		(header())
+		body class="select-none bg-zinc-800 text-[#f2f7f2]" {
+			div class="flex flex-col w-screen h-screen" {
+				div class="m-auto" {
 					(flash)
-                    h1 class="justify-center text-center" {
-                        "register"
-                    }
-                    form action="/users/register" method="post" class="mt-4 flex flex-col" {
-                        input type="text" name="username" placeholder="username" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
-                        input type="password" name="password" placeholder="password" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
-                        input type="text" name="invite" placeholder="invite" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
-                        button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
-                            i class="m-auto" data-feather="user-plus";
-                        }
-                    }
-                }
-            }
-        }
-    };
+					h1 class="justify-center text-center" {
+						"register"
+					}
+					form action="/users/register" method="post" class="mt-4 flex flex-col" {
+						input type="text" name="username" placeholder="username" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
+						input type="password" name="password" placeholder="password" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
+						input type="text" name="invite" placeholder="invite" autocomplete="off" class="rounded-lg mb-4 bg-zinc-700 py-1 px-2 focus:outline-cyan-700 drop-shadow-2xl placeholder:italic text-center caret-transparent";
+						button type="submit" class="rounded-lg m-auto block text-center bg-zinc-700 hover:bg-cyan-700 py-1 px-1 display:inline justify:center" {
+							i class="m-auto" data-feather="user-plus";
+						}
+					}
+				}
+			}
+		}
+	};
 
-    let mut builder = HttpResponse::Ok().body(body.into_string());
+	let mut builder = HttpResponse::Ok().body(body.into_string());
 	builder.add_removal_cookie(&Cookie::named("msg")).unwrap();
 	builder
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(index).service(login).service(register);
+	cfg.service(index).service(login).service(register);
 }

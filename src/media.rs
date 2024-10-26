@@ -54,29 +54,34 @@ async fn get(
     let file: MediaQuery = match is_discordbot {
         true => {
             if let Ok(x) = sqlx::query_as!(
-                MediaQuery,
-                "SELECT IFNULL(embeddable_file, file) AS \"file!\", filename, mime FROM media WHERE hash = ?",
-                hash
-            )
+				MediaQuery,
+				"SELECT IFNULL(embeddable_file, file) AS \"file!\", filename, mime FROM media WHERE hash = ?",
+				hash
+			)
             .fetch_one(&**sql)
-            .await {
-				x
-			} else {
-				debug!("cant find {hash} in db");
-				return HttpResponse::NotFound().finish();
-			}
+            .await
+            {
+                x
+            } else {
+                debug!("cant find {hash} in db");
+                return HttpResponse::NotFound().finish();
+            }
         }
         false => {
-			match sqlx::query_as!(
+            match sqlx::query_as!(
                 MediaQuery,
                 "SELECT file, filename, mime FROM media WHERE hash = ?",
                 hash
             )
             .fetch_one(&**sql)
-            .await {
-				Ok(x) => x,
-				Err(x) => { debug!("hash: {} {}", hash, x); return HttpResponse::NotFound().finish(); }
-			}
+            .await
+            {
+                Ok(x) => x,
+                Err(x) => {
+                    debug!("hash: {} {}", hash, x);
+                    return HttpResponse::NotFound().finish();
+                }
+            }
         }
     };
 
@@ -114,6 +119,7 @@ async fn receive_file(mut payload: Multipart) -> Result<FileData, Box<dyn Error>
         let content_disposition = field.content_disposition();
 
         filename = content_disposition
+            .ok_or("content disposition empty")?
             .get_filename()
             .unwrap_or("unknown")
             .to_owned();
@@ -204,11 +210,14 @@ async fn upload(
     {
         Ok(_) => {}
         Err(x) => {
-            if let sqlx::Error::Database(x) = x && let Some(x) = x.code() && x.contains("1555") {
-				// the hash is already in the DB, just send the link
-				return HttpResponse::Ok().json(JsonResponse {
-					url: format!("{}/{}", domain.as_str(), link_hash),
-				});
+            if let sqlx::Error::Database(x) = x
+                && let Some(x) = x.code()
+                && x.contains("1555")
+            {
+                // the hash is already in the DB, just send the link
+                return HttpResponse::Ok().json(JsonResponse {
+                    url: format!("{}/{}", domain.as_str(), link_hash),
+                });
             } else {
                 return HttpResponse::InternalServerError().json(ErrorResponse {
                     error: "The server was unable to process the file.".into(),

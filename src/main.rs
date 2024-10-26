@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 #![feature(let_chains)]
-#![feature(is_some_and)]
 #![feature(async_closure)]
 
 use actix_web::{middleware::Logger, web, App, HttpServer};

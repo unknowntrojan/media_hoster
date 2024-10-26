@@ -1,9 +1,14 @@
 use actix_web::{
+    body::MessageBody,
     cookie::{Cookie, SameSite},
-    get, http, post, web, HttpResponse, Responder,
+    get, http, post,
+    web::{self, Bytes},
+    HttpResponse, Responder,
 };
+use futures_util::TryStreamExt;
+use log::error;
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Either, Pool, Sqlite};
 
 use crate::{
     auth::{self, Session},
@@ -67,20 +72,40 @@ async fn login(
 
     let token = util::generate_token();
 
-    if let Ok(_) = auth::verify_password(form.password.as_str(), user.password.as_str()) && let Ok(_) = sqlx::query!("INSERT INTO sessions (user, token) VALUES(?, ?)", user.id, token).execute(&**sql).await {
-		HttpResponse::Found().cookie(Cookie::build("token", token).path("/").secure(true).http_only(true).same_site(SameSite::Strict).finish()).append_header((http::header::LOCATION, "/")).finish()
-	} else {
-		// Unauthorized
-		HttpResponse::Found()
-		.append_header((http::header::LOCATION, "/login")).cookie(
-			Cookie::build("msg", "login failed")
-				.path("/")
-				.secure(true)
-				.http_only(true)
-				.same_site(SameSite::Strict)
-				.finish(),
-		).finish()
-	}
+    if let Ok(_) = auth::verify_password(form.password.as_str(), user.password.as_str())
+        && let Ok(_) = sqlx::query!(
+            "INSERT INTO sessions (user, token) VALUES(?, ?)",
+            user.id,
+            token
+        )
+        .execute(&**sql)
+        .await
+    {
+        HttpResponse::Found()
+            .cookie(
+                Cookie::build("token", token)
+                    .path("/")
+                    .secure(true)
+                    .http_only(true)
+                    .same_site(SameSite::Strict)
+                    .finish(),
+            )
+            .append_header((http::header::LOCATION, "/"))
+            .finish()
+    } else {
+        // Unauthorized
+        HttpResponse::Found()
+            .append_header((http::header::LOCATION, "/login"))
+            .cookie(
+                Cookie::build("msg", "login failed")
+                    .path("/")
+                    .secure(true)
+                    .http_only(true)
+                    .same_site(SameSite::Strict)
+                    .finish(),
+            )
+            .finish()
+    }
 }
 
 #[post("/invite")]
@@ -304,6 +329,87 @@ async fn invalidate_apikey(session: Session, sql: web::Data<Pool<Sqlite>>) -> im
         .finish()
 }
 
+#[post("/download_dump")]
+async fn download_dump(session: Session, sql: web::Data<Pool<Sqlite>>) -> impl Responder {
+    let uid = session.user.id;
+
+    struct MediaQuery {
+        file: Vec<u8>,
+        filename: String,
+        mime: String,
+        added: i64,
+    }
+
+    let mut stream = sqlx::query_as!(
+        MediaQuery,
+        "SELECT file, filename, mime, added FROM media WHERE owner = ?",
+        uid
+    )
+    .fetch(&**sql);
+
+    // let tmp_path = format!("/tmp/{uid}");
+    // let archive_path = format!("/tmp/{uid}.tar");
+    #[cfg(target_os = "windows")]
+    let path = "C:/temp";
+    #[cfg(target_os = "linux")]
+    let path = "/tmp";
+
+    let tmp_path = format!("{path}/{uid}");
+    let archive_path = format!("{path}/{uid}.tar");
+
+    let _ = tokio::fs::remove_dir_all(&tmp_path).await;
+
+    let _ = tokio::fs::remove_file(&archive_path).await;
+
+    // we now have all the files. this is stupid.
+    tokio::fs::create_dir_all(&tmp_path)
+        .await
+        .expect("unable to create user dir");
+
+    while let Ok(Some(media)) = stream.try_next().await {
+        let file_path = format!("{tmp_path}/{}", &media.filename);
+
+        if let Err(err) = tokio::fs::write(&file_path, media.file).await {
+            error!("failed to write tmp file: {err:?}");
+            continue;
+        }
+
+        if let Err(err) = filetime::set_file_mtime(
+            &file_path,
+            filetime::FileTime::from_unix_time(media.added, 0),
+        ) {
+            error!("failed to set tmp file mtime: {err:?}");
+        }
+    }
+
+    tar::Builder::new(std::fs::File::create(&archive_path).expect("unable to create archive.tar"))
+        .append_dir_all("dump", &tmp_path)
+        .expect("unable to archive tar");
+
+    tokio::fs::remove_dir_all(&tmp_path)
+        .await
+        .expect("unable to remove temporary media dump!");
+
+    scopeguard::defer! {
+        std::fs::remove_file(&archive_path).expect("unable to remove archive");
+    }
+
+    HttpResponse::Ok()
+        .append_header((
+            "Content-Disposition",
+            "attachment; filename=\"dump.tar.zst\"",
+        ))
+        .body(
+            zstd::encode_all(
+                std::fs::File::open(&archive_path).expect("unable to open archive.tar"),
+                8,
+            )
+            .expect("unable to compress")
+            .try_into_bytes()
+            .unwrap(),
+        )
+}
+
 #[get("/uploader")]
 async fn sharex_uploader(domain: web::Data<String>, session: Session) -> impl Responder {
     // generate a SXCU file.
@@ -409,6 +515,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(login)
         .service(register)
         .service(invalidate_apikey)
+        .service(download_dump)
         .service(generate_invite);
 
     cfg.service(scope);
